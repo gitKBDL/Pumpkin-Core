@@ -1902,11 +1902,22 @@ impl LivingEntity {
             );
         }
 
+        // Vanilla Player.causeFallDamage: after a wind charge, only the part of
+        // the fall below where it caught the player hurts.
+        let Some(fall_distance) = caller.get_player().map_or(Some(fall_distance), |player| {
+            player.fall_distance_after_impulse(fall_distance)
+        }) else {
+            return;
+        };
+
         let safe_fall_distance = self.get_attribute_value(&Attributes::SAFE_FALL_DISTANCE) as f32;
         let unsafe_fall_distance = fall_distance + 1.0E-6 - safe_fall_distance;
 
         let damage = (unsafe_fall_distance * damage_per_distance).floor();
         if damage > 0.0 {
+            if let Some(player) = caller.get_player() {
+                player.reset_current_impulse_context();
+            }
             let check_damage = self.damage(caller, damage, DamageType::FALL); // Fall
             if check_damage {
                 self.entity

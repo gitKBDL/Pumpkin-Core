@@ -5,6 +5,8 @@ use pumpkin_data::{
     damage::DamageType,
     entity::EntityType,
     fluid::Fluid,
+    particle::Particle,
+    sound::Sound,
     tag::{Tag, Taggable},
 };
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
@@ -40,6 +42,36 @@ pub enum BlockInteraction {
     DestroyWithDecay,
     /// Triggers block effects without destroying them.
     TriggerBlock,
+}
+
+/// What players see and hear of an explosion.
+///
+/// Vanilla's `ServerLevel.explode` takes a particle for small explosions, one for
+/// large ones, and a sound.
+#[derive(Clone, Copy, Debug)]
+pub struct ExplosionEffects {
+    pub small_particle: Particle,
+    pub large_particle: Particle,
+    pub sound: Sound,
+}
+
+impl ExplosionEffects {
+    /// The effects of every explosion that is not a wind burst.
+    pub const DEFAULT: Self = Self {
+        small_particle: Particle::Explosion,
+        large_particle: Particle::ExplosionEmitter,
+        sound: Sound::EntityGenericExplode,
+    };
+
+    /// A wind burst's gusts, with the burst sound of whatever made it.
+    #[must_use]
+    pub const fn wind(sound: Sound) -> Self {
+        Self {
+            small_particle: Particle::GustEmitterSmall,
+            large_particle: Particle::GustEmitterLarge,
+            sound,
+        }
+    }
 }
 
 /// Defines how damage and block destruction are calculated for an explosion.
@@ -190,6 +222,8 @@ pub struct Explosion {
     block_interaction: BlockInteraction,
     damage_calculator: Option<Arc<dyn ExplosionDamageCalculator>>,
     preserve_rails: bool,
+    effects: ExplosionEffects,
+    source: Option<&'static EntityType>,
 }
 
 impl Explosion {
@@ -201,6 +235,8 @@ impl Explosion {
             block_interaction,
             damage_calculator: None,
             preserve_rails: false,
+            effects: ExplosionEffects::DEFAULT,
+            source: None,
         }
     }
 
@@ -217,6 +253,34 @@ impl Explosion {
     pub const fn preserving_rails(mut self) -> Self {
         self.preserve_rails = true;
         self
+    }
+
+    #[must_use]
+    pub const fn with_effects(mut self, effects: ExplosionEffects) -> Self {
+        self.effects = effects;
+        self
+    }
+
+    /// Names what went off.
+    ///
+    /// A player checks it to see whether a wind charge launched it.
+    #[must_use]
+    pub const fn caused_by(mut self, source: &'static EntityType) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    #[must_use]
+    pub const fn effects(&self) -> ExplosionEffects {
+        self.effects
+    }
+
+    /// Vanilla `Explosion.isSmall`, which picks the particle.
+    ///
+    /// Weak explosions, and any that leave blocks alone, are small.
+    #[must_use]
+    pub const fn is_small(&self) -> bool {
+        self.power < 2.0 || matches!(self.block_interaction, BlockInteraction::Keep)
     }
 
     fn protects_rail(&self, world: &World, pos: &BlockPos, block: &Block) -> bool {
@@ -396,6 +460,10 @@ impl Explosion {
                 continue;
             }
 
+            if let Some(player) = entity_base.get_player() {
+                player.on_explosion_hit(self.source == Some(&EntityType::WIND_CHARGE));
+            }
+
             let should_damage = calc.should_damage_entity(self, entity_base.as_ref());
             let knockback_multiplier = calc.get_knockback_multiplier(entity_base.as_ref()) as f64;
 
@@ -495,21 +563,12 @@ impl Explosion {
         self.damage_entities(world);
 
         match self.block_interaction {
-            BlockInteraction::Keep => 0,
-            BlockInteraction::TriggerBlock => {
-                let blocks = self.get_blocks_to_destroy(world);
-                for (pos, (block, _state)) in &blocks {
-                    let pumpkin_block = world.block_registry.get_pumpkin_block(block.id);
-                    if let Some(pumpkin_block) = pumpkin_block {
-                        pumpkin_block.explode(ExplodeArgs {
-                            world,
-                            block,
-                            position: pos,
-                        });
-                    }
-                }
-                0
-            }
+            // Vanilla's TRIGGER_BLOCK only reaches `onExplosionHit`, where buttons,
+            // doors and the like react, and nothing here reacts yet. `explode` is
+            // what a block does once an explosion has destroyed it: TNT lights itself,
+            // so calling it here lit TNT and left the block, and every wind charge
+            // near a pile of TNT set the whole pile off.
+            BlockInteraction::Keep | BlockInteraction::TriggerBlock => 0,
             BlockInteraction::Destroy | BlockInteraction::DestroyWithDecay => {
                 let center_pos = BlockPos::floored(self.pos.x, self.pos.y, self.pos.z);
                 let mut event =

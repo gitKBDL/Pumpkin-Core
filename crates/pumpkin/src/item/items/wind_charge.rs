@@ -39,6 +39,8 @@ impl ItemBehaviour for WindChargeItem {
         wind_charge.set_velocity_from(pitch, yaw, 0.0, POWER, 1.0);
 
         world.spawn_entity(Arc::new(WindChargeEntity::new_normal(wind_charge)));
+        // Vanilla's WindChargeItem allows one throw every half second.
+        player.start_cooldown(Item::WIND_CHARGE.registry_key.to_string(), 10);
 
         let mut main_hand = player.inventory.held_item();
         let consumed = if !main_hand.is_empty() && main_hand.item.id == Item::WIND_CHARGE.id {

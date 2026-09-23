@@ -1,0 +1,92 @@
+name: Axiom server release
+
+# Builds the server this branch carries for the Axiom plugin
+# (https://github.com/gitKBDL/axiom-pumpkin) and publishes it as a release.
+# Runs on axiom-v* tags, which the upstream release workflow skips here.
+on:
+  push:
+    tags:
+      - "axiom-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Thin LTO keeps most of release's speed at a fraction of its build time.
+  CARGO_PROFILE_RELEASE_LTO: thin
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - name: linux-arm64
+            os: ubuntu-26.04-arm
+            target: aarch64-unknown-linux-musl
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - run: rustup update stable && rustup default stable && rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install musl-tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release -p pumpkin --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          ext=""
+          if [ "${{ runner.os }}" == "Windows" ]; then ext=".exe"; fi
+          cp "target/${{ matrix.target }}/release/pumpkin$ext" "dist/pumpkin-axiom-${{ matrix.name }}$ext"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pumpkin-axiom-${{ matrix.name }}
+          path: dist/*
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: Pumpkin for Axiom ${{ github.ref_name }}
+          files: dist/*
+          body: |
+            Pumpkin with the plugin API the [Axiom plugin](https://github.com/gitKBDL/axiom-pumpkin) needs, plus fixes that are still waiting upstream.
+
+            Download the build for your platform, put the [plugin](https://github.com/gitKBDL/axiom-pumpkin/releases) in `plugins/`, and start the server.

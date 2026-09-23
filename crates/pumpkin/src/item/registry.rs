@@ -95,9 +95,8 @@ impl ItemRegistry {
         block: &Block,
         server: &Server,
     ) -> BlockActionResult {
-        let cooldown = stack.get_use_cooldown().cloned();
-        let cooldown_group = cooldown
-            .as_ref()
+        let cooldown_group = stack
+            .get_use_cooldown()
             .and_then(|c| c.cooldown_group.clone())
             .unwrap_or_else(|| stack.item.registry_key.to_string());
 
@@ -105,16 +104,13 @@ impl ItemRegistry {
             return BlockActionResult::Pass;
         }
 
+        // Vanilla starts an item's use cooldown only once the item is used. Starting it
+        // here meant that pointing at a block (the client sends the block use first)
+        // put a wind charge or ender pearl on cooldown just before it was thrown.
         let pumpkin_item = self.get_pumpkin_item(stack.item.id);
-        let result = pumpkin_item.map_or(BlockActionResult::Pass, |pumpkin_item| {
+        pumpkin_item.map_or(BlockActionResult::Pass, |pumpkin_item| {
             pumpkin_item.use_on_block(stack, player, location, face, cursor_pos, block, server)
-        });
-
-        if let Some(cooldown) = cooldown {
-            player.start_cooldown(cooldown_group, (cooldown.seconds * 20.0) as i32);
-        }
-
-        result
+        })
     }
 
     pub fn use_on_entity(
@@ -123,9 +119,8 @@ impl ItemRegistry {
         player: &Player,
         entity: Arc<dyn EntityBase>,
     ) {
-        let cooldown = stack.get_use_cooldown().cloned();
-        let cooldown_group = cooldown
-            .as_ref()
+        let cooldown_group = stack
+            .get_use_cooldown()
             .and_then(|c| c.cooldown_group.clone())
             .unwrap_or_else(|| stack.item.registry_key.to_string());
 
@@ -133,13 +128,10 @@ impl ItemRegistry {
             return;
         }
 
+        // As with blocks, the cooldown waits for the item's own use.
         let pumpkin_item = self.get_pumpkin_item(stack.item.id);
         if let Some(pumpkin_item) = pumpkin_item {
             pumpkin_item.use_on_entity(stack, player, entity);
-        }
-
-        if let Some(cooldown) = cooldown {
-            player.start_cooldown(cooldown_group, (cooldown.seconds * 20.0) as i32);
         }
     }
 

@@ -59,7 +59,7 @@ use border::Worldborder;
 use bytes::BufMut;
 pub use explosion::{
     BlockInteraction, DefaultExplosionDamageCalculator, Explosion, ExplosionDamageCalculator,
-    ExplosionInteraction, SimpleExplosionDamageCalculator,
+    ExplosionEffects, ExplosionInteraction, SimpleExplosionDamageCalculator,
 };
 use pumpkin_config::BasicConfiguration;
 use pumpkin_data::block_properties::{blocks_movement, is_air};
@@ -3753,21 +3753,26 @@ impl World {
         power: f32,
         interaction: ExplosionInteraction,
     ) {
-        self.explode_with_calculator(position, power, interaction, None);
+        let explosion = Explosion::new(power, position, self.get_block_interaction(interaction));
+        self.run_explosion(&explosion, position, power);
     }
 
-    pub fn explode_with_calculator(
+    /// A wind burst, as wind charges and the Wind Charged effect make one.
+    ///
+    /// It only triggers blocks, and shows gusts with `sound` in place of an explosion.
+    pub fn explode_wind(
         self: &Arc<Self>,
         position: Vector3<f64>,
         power: f32,
-        interaction: ExplosionInteraction,
-        damage_calculator: Option<Arc<dyn ExplosionDamageCalculator>>,
+        damage_calculator: Arc<dyn ExplosionDamageCalculator>,
+        sound: Sound,
+        source: &'static EntityType,
     ) {
-        let block_interaction = self.get_block_interaction(interaction);
-        let mut explosion = Explosion::new(power, position, block_interaction);
-        if let Some(calc) = damage_calculator {
-            explosion = explosion.with_damage_calculator(calc);
-        }
+        let block_interaction = self.get_block_interaction(ExplosionInteraction::Trigger);
+        let explosion = Explosion::new(power, position, block_interaction)
+            .with_damage_calculator(damage_calculator)
+            .with_effects(ExplosionEffects::wind(sound))
+            .caused_by(source);
         self.run_explosion(&explosion, position, power);
     }
 
@@ -3820,12 +3825,13 @@ impl World {
         }
 
         let block_count = explosion.explode(self);
-        let particle = if power < 2.0 {
-            Particle::Explosion
+        let effects = explosion.effects();
+        let particle = if explosion.is_small() {
+            effects.small_particle
         } else {
-            Particle::ExplosionEmitter
+            effects.large_particle
         };
-        let sound = IdOr::<SoundEvent>::Id(Sound::EntityGenericExplode as u16);
+        let sound = IdOr::<SoundEvent>::Id(effects.sound as u16);
         for player in self.players.load().iter() {
             if player.position().squared_distance_to_vec(&position) > 4096.0 {
                 continue;

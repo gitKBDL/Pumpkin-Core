@@ -21,6 +21,15 @@ impl JavaClient {
             return;
         }
         self.update_sequence(use_item.sequence.0);
+        if self.version.load() >= JavaMinecraftVersion::V_1_21 {
+            // Vanilla turns the player to the rotation the click was sent with. The
+            // client sends its rotation for the tick only after the click, so without
+            // this a snowball thrown while turning flies where the player looked last.
+            player
+                .living_entity
+                .entity
+                .set_rotation(use_item.yaw, use_item.pitch);
+        }
 
         let mut item_in_hand = inventory.get_stack_in_hand(hand);
 

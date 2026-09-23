@@ -18,7 +18,7 @@ use crate::block::blocks::stairs::StairBlock;
 use crate::block::blocks::trapdoor::TrapDoorBlock;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
-    BlockBehaviour, BlockMetadata, BrokenArgs, CanPlaceAtArgs, CanUpdateAtArgs,
+    BlockBehaviour, BlockMetadata, BrokenArgs, CanPlaceAtArgs, CanUpdateAtArgs, ExplodeArgs,
     GetComparatorOutputArgs, GetStateForNeighborUpdateArgs, NormalUseArgs, OnNeighborUpdateArgs,
     OnPlaceArgs, OnStateReplacedArgs, PathComputationType, PlacedArgs, RandomTickArgs,
 };
@@ -781,6 +781,10 @@ impl BlockBehaviour for WeatheringCopperTrapDoorBlock {
         TrapDoorBlock.on_place(args)
     }
 
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        TrapDoorBlock.on_explosion_trigger(args);
+    }
+
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         TrapDoorBlock.normal_use(args)
     }
@@ -899,6 +903,10 @@ impl BlockMetadata for WeatheringCopperDoorBlock {
 impl BlockBehaviour for WeatheringCopperDoorBlock {
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         DoorBlock.on_place(args)
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        DoorBlock.on_explosion_trigger(args);
     }
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {

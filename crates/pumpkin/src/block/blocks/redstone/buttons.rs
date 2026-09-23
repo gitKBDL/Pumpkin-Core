@@ -15,6 +15,7 @@ type ButtonLikeProperties = pumpkin_data::block_properties::LeverLikeProperties;
 
 use crate::block::CanPlaceAtArgs;
 use crate::block::EmitsRedstonePowerArgs;
+use crate::block::ExplodeArgs;
 use crate::block::GetRedstonePowerArgs;
 use crate::block::GetStateForNeighborUpdateArgs;
 use crate::block::OnPlaceArgs;
@@ -79,6 +80,10 @@ impl BlockBehaviour for ButtonBlock {
         } else {
             BlockActionResult::Consume
         }
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        click_button(args.world, args.position);
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {

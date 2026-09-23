@@ -10,9 +10,10 @@ use pumpkin_world::{
 
 use crate::{
     block::{
-        BlockBehaviour, GetComparatorOutputArgs, GetStateForNeighborUpdateArgs, NormalUseArgs,
-        OnScheduledTickArgs, PathComputationType, UseWithItemArgs,
+        BlockBehaviour, ExplodeArgs, GetComparatorOutputArgs, GetStateForNeighborUpdateArgs,
+        NormalUseArgs, OnScheduledTickArgs, PathComputationType, UseWithItemArgs,
         blocks::cake::{CakeBlock, FULL_CAKE_SIGNAL},
+        blocks::candles::extinguish,
         registry::BlockActionResult,
     },
     entity::player::Player,
@@ -98,6 +99,10 @@ impl BlockBehaviour for CandleCakeBlock {
 
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         Self::consume_and_drop_candle(args.block, args.player, args.position, args.world)
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        extinguish(args.world, args.block, args.position);
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {

@@ -1,7 +1,8 @@
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
-    BlockBehaviour, NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs, PathComputationType,
+    BlockBehaviour, ExplodeArgs, NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs,
+    PathComputationType,
 };
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
@@ -18,16 +19,16 @@ use std::sync::Arc;
 
 type TrapDoorProperties = pumpkin_data::block_properties::OakTrapdoorLikeProperties;
 
-fn toggle_trapdoor(player: &Player, world: &Arc<World>, block_pos: &BlockPos) {
+/// Swings the trapdoor. A player who did it has already heard it.
+fn toggle_trapdoor(player: Option<&Player>, world: &Arc<World>, block_pos: &BlockPos) {
     let (block, block_state) = world.get_block_and_state_id(block_pos);
     let mut trapdoor_props = TrapDoorProperties::from_state_id(block_state);
     trapdoor_props.open = !trapdoor_props.open;
 
-    world.play_block_sound_expect(
-        player,
-        get_sound(block, trapdoor_props.open),
-        SoundCategory::Blocks,
-        *block_pos,
+    let sound = get_sound(block, trapdoor_props.open);
+    player.map_or_else(
+        || world.play_block_sound(sound, SoundCategory::Blocks, *block_pos),
+        |player| world.play_block_sound_expect(player, sound, SoundCategory::Blocks, *block_pos),
     );
 
     world.set_block_state(
@@ -72,9 +73,17 @@ impl BlockBehaviour for TrapDoorBlock {
                 return BlockActionResult::Pass;
             }
 
-            toggle_trapdoor(args.player, args.world, args.position);
+            toggle_trapdoor(Some(args.player), args.world, args.position);
 
             BlockActionResult::Success
+        }
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        let props = TrapDoorProperties::from_state_id(args.world.get_block_state_id(args.position));
+        // As in vanilla, iron trapdoors and powered ones stay as they are.
+        if !props.powered && can_open_trapdoor(args.block) {
+            toggle_trapdoor(None, args.world, args.position);
         }
     }
 

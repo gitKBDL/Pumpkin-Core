@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use pumpkin_data::item::Item;
+use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{
-    BlockDirection, BlockStateId, block_properties::CandleLikeProperties, entity::EntityPose,
+    Block, BlockDirection, BlockStateId, block_properties::CandleLikeProperties, entity::EntityPose,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
@@ -8,7 +11,8 @@ use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockAccessor;
 use pumpkin_world::world::BlockFlags;
 
-use crate::block::{GetStateForNeighborUpdateArgs, OnScheduledTickArgs};
+use crate::block::{ExplodeArgs, GetStateForNeighborUpdateArgs, OnScheduledTickArgs};
+use crate::world::World;
 use crate::{
     block::{
         BlockIsReplacing,
@@ -20,6 +24,29 @@ use crate::{
     },
     entity::EntityBase,
 };
+
+/// Blows out a lit candle or candle cake, as vanilla's wind burst does
+/// (`AbstractCandleBlock.onExplosionHit`).
+pub fn extinguish(world: &Arc<World>, block: &Block, position: &BlockPos) {
+    let state_id = world.get_block_state_id(position);
+    let Some(mut props) = block.properties(state_id).map(|props| props.to_props()) else {
+        return;
+    };
+    let Some((_, lit)) = props.iter_mut().find(|(key, _)| *key == "lit") else {
+        return;
+    };
+    if *lit != "true" {
+        return;
+    }
+    *lit = "false";
+    let unlit = block.from_properties(&props).to_state_id(block);
+    world.set_block_state(position, unlit, BlockFlags::NOTIFY_ALL);
+    world.play_block_sound(
+        Sound::BlockCandleExtinguish,
+        SoundCategory::Blocks,
+        *position,
+    );
+}
 
 #[pumpkin_block_from_tag("minecraft:candles")]
 pub struct CandleBlock;
@@ -104,6 +131,10 @@ impl BlockBehaviour for CandleBlock {
 
             BlockActionResult::Consume
         }
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        extinguish(args.world, args.block, args.position);
     }
 
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {

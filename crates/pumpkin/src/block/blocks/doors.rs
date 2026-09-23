@@ -17,6 +17,7 @@ use std::sync::Arc;
 use crate::block::BlockBehaviour;
 use crate::block::BrokenArgs;
 use crate::block::CanPlaceAtArgs;
+use crate::block::ExplodeArgs;
 use crate::block::GetStateForNeighborUpdateArgs;
 use crate::block::NormalUseArgs;
 use crate::block::OnNeighborUpdateArgs;
@@ -251,6 +252,15 @@ impl BlockBehaviour for DoorBlock {
             toggle_door(args.player, args.world, args.position);
 
             BlockActionResult::Success
+        }
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        let props = DoorProperties::from_state_id(args.world.get_block_state_id(args.position));
+        // Only the lower half answers, so a door caught whole swings once. As in
+        // vanilla, iron doors and powered ones stay as they are.
+        if props.half == DoubleBlockHalf::Lower && !props.powered && can_open_door(args.block) {
+            Self::set_open(args.world, args.position, !props.open);
         }
     }
 

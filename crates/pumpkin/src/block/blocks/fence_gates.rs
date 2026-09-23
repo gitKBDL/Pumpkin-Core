@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
-    BlockBehaviour, GetStateForNeighborUpdateArgs, NormalUseArgs, OnNeighborUpdateArgs,
-    OnPlaceArgs, PathComputationType,
+    BlockBehaviour, ExplodeArgs, GetStateForNeighborUpdateArgs, NormalUseArgs,
+    OnNeighborUpdateArgs, OnPlaceArgs, PathComputationType,
 };
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
@@ -103,6 +103,26 @@ impl BlockBehaviour for FenceGateBlock {
 
             BlockActionResult::Success
         }
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        let (block, state) = args.world.get_block_and_state_id(args.position);
+        let mut props = FenceGateProperties::from_state_id(state);
+        // Vanilla swings the gate where it faces, and leaves a powered one be.
+        if props.powered {
+            return;
+        }
+        props.open = !props.open;
+        args.world.play_block_sound(
+            get_sound(block, props.open),
+            SoundCategory::Blocks,
+            *args.position,
+        );
+        args.world.set_block_state(
+            args.position,
+            props.to_state_id(block),
+            BlockFlags::NOTIFY_ALL,
+        );
     }
 
     fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {

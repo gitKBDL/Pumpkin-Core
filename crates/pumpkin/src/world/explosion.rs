@@ -563,12 +563,24 @@ impl Explosion {
         self.damage_entities(world);
 
         match self.block_interaction {
-            // Vanilla's TRIGGER_BLOCK only reaches `onExplosionHit`, where buttons,
-            // doors and the like react, and nothing here reacts yet. `explode` is
-            // what a block does once an explosion has destroyed it: TNT lights itself,
-            // so calling it here lit TNT and left the block, and every wind charge
-            // near a pile of TNT set the whole pile off.
-            BlockInteraction::Keep | BlockInteraction::TriggerBlock => 0,
+            BlockInteraction::Keep => 0,
+            // Vanilla's TRIGGER_BLOCK only reaches `onExplosionHit`, where buttons are
+            // pressed and doors swing. `explode` is what a block does once an explosion
+            // has destroyed it: TNT lights itself there, so calling it here lit TNT and
+            // left the block, and every wind charge near a pile of TNT set it all off.
+            BlockInteraction::TriggerBlock => {
+                let blocks = self.get_blocks_to_destroy(world);
+                for (pos, (block, _state)) in &blocks {
+                    if let Some(pumpkin_block) = world.block_registry.get_pumpkin_block(block.id) {
+                        pumpkin_block.on_explosion_trigger(ExplodeArgs {
+                            world,
+                            block,
+                            position: pos,
+                        });
+                    }
+                }
+                blocks.len() as u32
+            }
             BlockInteraction::Destroy | BlockInteraction::DestroyWithDecay => {
                 let center_pos = BlockPos::floored(self.pos.x, self.pos.y, self.pos.z);
                 let mut event =

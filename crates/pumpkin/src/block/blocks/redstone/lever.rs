@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::block::{
-    CanPlaceAtArgs, EmitsRedstonePowerArgs, GetRedstonePowerArgs, GetStateForNeighborUpdateArgs,
-    OnPlaceArgs, OnStateReplacedArgs, blocks::abstract_wall_mounting::WallMountedBlock,
+    CanPlaceAtArgs, EmitsRedstonePowerArgs, ExplodeArgs, GetRedstonePowerArgs,
+    GetStateForNeighborUpdateArgs, OnPlaceArgs, OnStateReplacedArgs,
+    blocks::abstract_wall_mounting::WallMountedBlock,
 };
 use pumpkin_data::{
     Block, BlockDirection, BlockStateId, HorizontalFacingExt,
@@ -62,6 +63,10 @@ impl BlockBehaviour for LeverBlock {
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         toggle_lever(args.world, args.position);
         BlockActionResult::Consume
+    }
+
+    fn on_explosion_trigger(&self, args: ExplodeArgs<'_>) {
+        toggle_lever(args.world, args.position);
     }
 
     fn emits_redstone_power(&self, _args: EmitsRedstonePowerArgs<'_>) -> bool {

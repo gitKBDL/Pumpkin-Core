@@ -6,6 +6,7 @@ on:
       - "*"
       - "!nightly"
       - "!nightly*"
+      - "!axiom-v*"
   workflow_dispatch:
     inputs:
       tag_name:

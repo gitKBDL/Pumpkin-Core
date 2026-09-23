@@ -497,6 +497,13 @@ pub struct Player {
     /// The player's total experience points.
     pub experience_points: AtomicI32,
     pub item_cooldowns: std::sync::Mutex<HashMap<String, ItemCooldown>>,
+    /// Where the last explosion caught the player, vanilla's `currentImpulseImpactPos`.
+    current_impulse_impact_pos: AtomicCell<Option<Vector3<f64>>>,
+    /// Whether that explosion was a wind charge's, which excuses the fall after it.
+    ignore_fall_damage_from_current_impulse: AtomicBool,
+    /// Ticks before being on the ground ends the impulse, so that the ground a
+    /// charge lifts the player from does not end it at once.
+    current_impulse_context_reset_grace_time: AtomicI32,
     pub experience_pick_up_delay: Mutex<u32>,
     pub chunk_sender: Mutex<crate::net::ChunkSender>,
     pub chunk_listener: Mutex<Receiver<(Vector2<i32>, Weak<ChunkData>)>>,
@@ -798,6 +805,9 @@ impl Player {
             experience_progress: AtomicCell::new(0.0),
             experience_points: AtomicI32::new(0),
             item_cooldowns: std::sync::Mutex::new(HashMap::new()),
+            current_impulse_impact_pos: AtomicCell::new(None),
+            ignore_fall_damage_from_current_impulse: AtomicBool::new(false),
+            current_impulse_context_reset_grace_time: AtomicI32::new(0),
             chunk_sender: Mutex::new(crate::net::ChunkSender::new()),
             chunk_listener: Mutex::new(world.level.chunk_listener.add_global_chunk_listener()),
             held_chunk_tickets: Mutex::new(None),
@@ -962,6 +972,60 @@ impl Player {
             }
         }
         0.0
+    }
+
+    /// Vanilla `Player.onExplosionHit`: remembers where an explosion caught the player.
+    ///
+    /// After a wind charge's, the fall that follows only hurts below that point.
+    pub fn on_explosion_hit(&self, by_wind_charge: bool) {
+        self.current_impulse_impact_pos.store(Some(self.position()));
+        self.ignore_fall_damage_from_current_impulse
+            .store(by_wind_charge, Ordering::Relaxed);
+        if by_wind_charge {
+            self.current_impulse_context_reset_grace_time
+                .fetch_max(40, Ordering::Relaxed);
+        } else {
+            self.current_impulse_context_reset_grace_time
+                .store(0, Ordering::Relaxed);
+        }
+    }
+
+    pub(crate) fn reset_current_impulse_context(&self) {
+        self.current_impulse_impact_pos.store(None);
+        self.ignore_fall_damage_from_current_impulse
+            .store(false, Ordering::Relaxed);
+    }
+
+    fn try_reset_current_impulse_context(&self) {
+        if self
+            .current_impulse_context_reset_grace_time
+            .load(Ordering::Relaxed)
+            == 0
+        {
+            self.reset_current_impulse_context();
+        }
+    }
+
+    /// Vanilla `Player.causeFallDamage`: after a wind charge, only the part of a
+    /// fall below where it caught the player hurts. None when no part does.
+    pub(crate) fn fall_distance_after_impulse(&self, fall_distance: f32) -> Option<f32> {
+        let Some(impact) = self.current_impulse_impact_pos.load() else {
+            return Some(fall_distance);
+        };
+        if !self
+            .ignore_fall_damage_from_current_impulse
+            .load(Ordering::Relaxed)
+        {
+            return Some(fall_distance);
+        }
+        let distance = fall_distance.min((impact.y - self.position().y) as f32);
+        if distance <= 0.0 {
+            self.reset_current_impulse_context();
+            None
+        } else {
+            self.try_reset_current_impulse_context();
+            Some(distance)
+        }
     }
 
     pub fn is_on_cooldown(&self, group: &str) -> bool {
@@ -2711,6 +2775,18 @@ impl Player {
     #[expect(clippy::too_many_lines)]
     pub fn tick<'a>(&'a self, server: &'a Server) {
         self.process_inbound_packets();
+
+        // Vanilla ends an explosion's impulse once the player is back on the
+        // ground, which the packets just handled have told us.
+        let grace = self
+            .current_impulse_context_reset_grace_time
+            .load(Ordering::Relaxed);
+        if grace > 0 {
+            self.current_impulse_context_reset_grace_time
+                .store(grace - 1, Ordering::Relaxed);
+        } else if self.living_entity.entity.on_ground.load(Ordering::Relaxed) {
+            self.reset_current_impulse_context();
+        }
 
         if self.is_spectator() {
             self.living_entity

@@ -1,4 +1,5 @@
 use pumpkin_data::damage::DamageType;
+use pumpkin_data::sound::Sound;
 use pumpkin_data::tag;
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::LazyLock;
@@ -86,16 +87,23 @@ impl WindChargeEntity {
     }
 
     pub fn create_explosion(&self, position: Vector3<f64>) {
-        let (power, calculator) = match self.kind {
-            WindChargeKind::Normal { .. } => (1.2, WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR.clone()),
-            WindChargeKind::Breeze => (3.0, BREEZE_WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR.clone()),
+        let (power, calculator, sound) = match self.kind {
+            WindChargeKind::Normal { .. } => (
+                1.2,
+                WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR.clone(),
+                Sound::EntityWindChargeWindBurst,
+            ),
+            WindChargeKind::Breeze => (
+                3.0,
+                BREEZE_WIND_CHARGE_EXPLOSION_DAMAGE_CALCULATOR.clone(),
+                Sound::EntityBreezeWindBurst,
+            ),
         };
-        self.get_entity().world.load().explode_with_calculator(
-            position,
-            power,
-            crate::world::ExplosionInteraction::Trigger,
-            Some(calculator),
-        );
+        let entity = self.get_entity();
+        entity
+            .world
+            .load()
+            .explode_wind(position, power, calculator, sound, entity.entity_type);
     }
 
     pub fn deflect(
@@ -143,7 +151,15 @@ impl EntityBase for WindChargeEntity {
     }
 
     fn on_hit(&self, hit: ProjectileHit) {
-        let hit_pos = hit.hit_pos();
+        let center = match &hit {
+            // Vanilla bursts a quarter block out from the face it hit. Right on the
+            // face, the block itself would shield everything above it, so a charge
+            // thrown at the ground would not lift whoever stands there.
+            ProjectileHit::Block { face, hit_pos, .. } => {
+                hit_pos.add(&face.to_offset().to_f64().multiply(0.25, 0.25, 0.25))
+            }
+            ProjectileHit::Entity { hit_pos, .. } => *hit_pos,
+        };
         if let ProjectileHit::Entity { ref entity, .. } = hit {
             let world = self.get_entity().world.load();
             let owner_id = self.thrown_item_entity.owner_id;
@@ -153,11 +169,11 @@ impl EntityBase for WindChargeEntity {
                 entity.as_ref(),
                 1.0,
                 DamageType::WIND_CHARGE,
-                Some(hit_pos),
+                Some(center),
                 Some(self.get_entity()),
                 owner.as_deref(),
             );
         }
-        self.create_explosion(hit_pos);
+        self.create_explosion(center);
     }
 }

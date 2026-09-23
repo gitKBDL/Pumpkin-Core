@@ -1074,7 +1074,21 @@ pub fn value_to_configured_feature(v: &Value) -> TokenStream {
 ///
 /// # Returns
 /// A `TokenStream` for the appropriate `BlockStateProvider` variant; defaults to `BlockStateProvider::Simple` with air if the type is unrecognised.
+/// A string names a provider defined in `worldgen/block_state_provider`.
 fn value_to_block_state_provider(v: &Value) -> TokenStream {
+    // A provider can also be named, as every tree's `below_trunk_provider` names
+    // `minecraft:soil_beneath_tree`. Its definition is a file of its own.
+    if let Some(id) = v.as_str() {
+        let name = id.strip_prefix("minecraft:").unwrap_or(id);
+        let path = format!(
+            "../../assets/datapack/data/minecraft/worldgen/block_state_provider/{name}.json"
+        );
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("Missing block state provider {id}"));
+        let provider: Value =
+            serde_json::from_str(&content).expect("Failed to parse block state provider JSON");
+        return value_to_block_state_provider(&provider);
+    }
     if v.get("type").is_none() && (v.get("id").is_some() || v.get("Name").is_some()) {
         let state = value_to_block_state(v);
         return quote! { BlockStateProvider::Simple(SimpleStateProvider { state: #state }) };
